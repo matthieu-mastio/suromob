@@ -1,0 +1,27 @@
+Eqasim
+    dl des données
+        uv run scripts/download.py config_toulouse_mini.yml 
+
+    creation pop synth haute_garonne_5pct  
+        uv run python -m synpp config_toulouse_mini.yml
+
+    création d'un shape file du 31000 avec buffer
+        uv run python get_31000_shapefile.py
+
+    découpage du shapefile, dans eqasim-java
+        mvn install -pl core -am -DskipTests
+
+	mvn -pl ile_de_france exec:java -Dexec.mainClass="org.eqasim.core.scenario.cutter.RunScenarioCutter" -Dexec.args="--config-path ../generated_pops/haute_garonne_5pct/haute_garonne_5pct_config.xml --output-path ../generated_pops/31000_5pct/ --extent-path /home/mmastio/popsynth/get_31000_shapefile/emprise_31000_buffer.shp --threads 8" -Dexec.classpathScope=compile
+
+
+
+Lancer MATSim:
+	mvn package -pl ile_de_france -am -P standalone -DskipTests (recompiler le jar si nécessaire)
+	move and execute add_drt.py dans le rep de la pop
+	nohup /usr/bin/time java -Xmx40G -cp /home/mmastio/popsynth/eqasim-java/ile_de_france/target/ile_de_france-2.2.0.jar org.eqasim.ile_de_france.RunSimulation --config-path config_drt.xml > out.txt 2>&1 &
+
+Visualiser results:
+	simwrapper run --port 5000
+	puis depuis client: ssh -L 5000:127.0.0.1:5000 mmastio@ramses
+
+

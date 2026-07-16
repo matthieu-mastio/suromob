@@ -1,0 +1,10 @@
+[project]
+name = "shape"
+version = "1.4.0"
+description = "Generating synthetic populations for France based on open data"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "osmnx",
+    "geopandas"
+]
