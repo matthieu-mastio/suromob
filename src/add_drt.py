@@ -5,14 +5,29 @@ import random
 import argparse
 
 def get_random_links(network_path, num_links):
+    """Pick random links from the network that allow 'car' mode.
+    
+    DRT vehicles must be placed on car-accessible links because MATSim
+    filters the network by mode. Links with only 'rail', 'pt', 'walk', etc.
+    would cause a 'Start link ... is null' crash at runtime.
+    """
     links = []
     try:
         with gzip.open(network_path, 'rt') as f:
             for line in f:
                 if '<link id="' in line:
+                    # Only keep links that allow 'car' mode
+                    modes_match = re.search(r'modes="([^"]+)"', line)
+                    if modes_match:
+                        modes = modes_match.group(1).replace(",", " ").split()
+                        if "car" not in modes:
+                            continue
                     match = re.search(r'<link id="([^"]+)"', line)
                     if match:
                         links.append(match.group(1))
+        if not links:
+            print(f"Warning: No car-accessible links found in {network_path}")
+            return []
         return random.sample(links, min(num_links, len(links)))
     except Exception as e:
         print(f"Warning: Could not read network file to pick random links: {e}")
