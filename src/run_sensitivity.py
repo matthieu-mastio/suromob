@@ -391,8 +391,8 @@ def run_single_job(job: SimJob, jar_path: str, output_dir: Path,
         collect_results(job, workdir, sim_output, output_dir)
 
         # Step 4: cleanup workdir to free disk space
-        cleanup_workdir(workdir)
-        workdir = None
+        # cleanup_workdir(workdir)
+        # workdir = None
 
         return f"OK: {tag}"
 
