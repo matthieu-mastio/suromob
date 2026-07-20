@@ -229,13 +229,18 @@ def run_add_drt(job: SimJob, workdir: Path) -> Path:
     add_drt_script = Path(__file__).parent / "add_drt.py"
     row = job.doe_row
 
+    # Extract population percentage from folder name (e.g. '31000_10pct' -> 10)
+    # The DoE fleet sizes are defined for the 1% population, so we scale them linearly.
+    pop_pct_str = job.pop_path.name.split('_')[-1].replace('pct', '')
+    pop_pct = int(pop_pct_str) if pop_pct_str.isdigit() else 1
+
     cmd = [
         sys.executable, str(add_drt_script),
         "--base-dir", str(workdir),
-        "--nb-4", str(row.nb_4),
-        "--nb-6", str(row.nb_6),
-        "--nb-15", str(row.nb_15),
-        "--nb-20", str(row.nb_20),
+        "--nb-4", str(int(row.nb_4 * pop_pct)),
+        "--nb-6", str(int(row.nb_6 * pop_pct)),
+        "--nb-15", str(int(row.nb_15 * pop_pct)),
+        "--nb-20", str(int(row.nb_20 * pop_pct)),
         "--max-wait-time", str(row.max_wait_time),
         "--max-travel-time-alpha", str(row.max_travel_time_alpha),
         "--drt-constant", str(row.drt_constant),

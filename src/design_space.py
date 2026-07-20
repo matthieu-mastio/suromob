@@ -16,10 +16,10 @@ def create_amod_design_space():
     
     ds = DesignSpace([
         # --- 1. Composition de la flotte (Nombres entiers de navettes) ---
-        IntegerVariable(0, 15),  # nb_shuttles_4_seats
-        IntegerVariable(0, 15),  # nb_shuttles_6_seats
-        IntegerVariable(0, 15),  # nb_shuttles_15_seats
-        IntegerVariable(0, 15),  # nb_shuttles_20_seats
+        IntegerVariable(0, 5),  # nb_shuttles_4_seats
+        IntegerVariable(0, 5),  # nb_shuttles_6_seats
+        IntegerVariable(0, 5),  # nb_shuttles_15_seats
+        IntegerVariable(0, 5),  # nb_shuttles_20_seats
         
         # --- 2. Contraintes de Service et Rebalancing ---
         # maxWaitTime (en secondes) : de 5 minutes à 30 minutes
