@@ -112,6 +112,7 @@ def process_experiment(exp_dir: Path) -> dict:
     if f.exists() and total_capacity > 0:
         df = pd.read_csv(f, sep=";")
         if not df.empty:
+            df = df[df["time"] <= "24:00:00"]
             occ_cols = [c for c in df.columns if re.match(r"\d+ pax", c)]
             occupancy_levels = [int(re.search(r"\d+", c).group()) for c in occ_cols]
             df["passengers"] = sum(
