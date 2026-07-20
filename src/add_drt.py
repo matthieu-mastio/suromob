@@ -57,6 +57,13 @@ def update_config(config_path, out_config_path, max_wait_time, max_travel_time_a
     with open(config_path, 'r') as f:
         content = f.read()
 
+    # Update Eqasim modeParametersPath to point to the new YAML file
+    content = re.sub(
+        r'(<param name="modeParametersPath" value=")null(" />)',
+        r'\g<1>mode_parameters.yml\g<2>',
+        content
+    )
+
     # Update DiscreteModeChoice cachedModes
     content = re.sub(
         r'(<param name="cachedModes" value=")([^"]+)(" \/>)',
@@ -190,6 +197,11 @@ if __name__ == '__main__':
     vehicles_path = os.path.join(base_dir, 'drt_vehicles.xml')
     config_in_path = os.path.join(base_dir, 'config.xml')
     config_out_path = os.path.join(base_dir, 'config_drt.xml')
+    mode_params_path = os.path.join(base_dir, 'mode_parameters.yml')
+
+    # Create the YAML file for Eqasim to load the DRT constant (alpha_u)
+    with open(mode_params_path, 'w') as f:
+        f.write(f"drt.alpha_u: {args.drt_constant}\n")
 
     create_drt_vehicles(vehicles_path, network_path=network_path, capacities=capacities)
     update_config(

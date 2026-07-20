@@ -24,4 +24,7 @@ Visualiser results:
 	simwrapper run --port 5000
 	puis depuis client: ssh -L 5000:127.0.0.1:5000 mmastio@ramses
 
+Analyse de sensibilité:
+    nohup python3 src/run_sensitivity.py --populations /home/mmastio/popsynth/generated_pops/31000_1pct /home/mmastio/popsynth/generated_pops/31000_5pct /home/mmastio/popsynth/generated_pops/31000_10pct  --doe doe_LF0_80.csv --output-dir sa_output/  > out.txt 2>&1 &
+    /home/mmastio/popsynth/eqasim-france/.venv/bin/python3 src/parse_outputs.py --sa-dir sa_output/
 
