@@ -90,6 +90,21 @@ def update_config(config_path, out_config_path, max_wait_time, max_travel_time_a
         content
     )
 
+    # Change simEndtimeInterpretation to onlyUseEndtime to prevent QSim from hanging with rejected DRT passengers
+    content = re.sub(
+        r'(<param name="simEndtimeInterpretation" value=")[^"]+(" />)',
+        r'\g<1>onlyUseEndtime\g<2>',
+        content
+    )
+
+    # Add DrtWalkConstraint to tripConstraints to ensure DRT trips contain at least one DRT leg
+    content = re.sub(
+        r'(<param name="tripConstraints" value="[^"]+)(" />)',
+        r'\g<1>, DrtWalkConstraint\g<2>',
+        content
+    )
+
+
     # Add DrtUtilityEstimator and FlatDrtCostModel for drt to Eqasim configuration
     content = re.sub(
         r'(<parameterset type="estimator" >\s*<param name="estimator" value="ZeroUtilityEstimator" />\s*<param name="mode" value="outside" />\s*</parameterset>)',
