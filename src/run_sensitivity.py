@@ -139,9 +139,13 @@ def estimate_heap_gb(pop_path: Path) -> int:
     """
     pop_file = pop_path / "population.xml.gz"
     if not pop_file.exists():
-        log.warning("population.xml.gz not found in %s, using default heap %d GB",
-                     pop_path, HEAP_FLOOR_GB)
-        return HEAP_FLOOR_GB
+        prefixed = pop_path / f"{pop_path.name}_population.xml.gz"
+        if prefixed.exists():
+            pop_file = prefixed
+        else:
+            log.warning("population.xml.gz not found in %s, using default heap %d GB",
+                         pop_path, HEAP_FLOOR_GB)
+            return HEAP_FLOOR_GB
 
     size_mb = pop_file.stat().st_size / (1024 * 1024)
 
@@ -205,8 +209,14 @@ def create_workdir(job: SimJob, base_workdir: Path) -> Path:
     workdir.mkdir(parents=True, exist_ok=True)
 
     for filename in SHARED_INPUT_FILES:
-        src = job.pop_path / filename
         dst = workdir / filename
+        src = job.pop_path / filename
+        # If generic name doesn't exist, try looking for a prefixed version
+        if not src.exists():
+            prefixed = job.pop_path / f"{job.pop_name}_{filename}"
+            if prefixed.exists():
+                src = prefixed
+
         if src.exists() and not dst.exists():
             os.symlink(src.resolve(), dst)
 
@@ -229,18 +239,29 @@ def run_add_drt(job: SimJob, workdir: Path) -> Path:
     add_drt_script = Path(__file__).parent / "add_drt.py"
     row = job.doe_row
 
-    # Extract population percentage from folder name (e.g. '31000_10pct' -> 10)
-    # The DoE fleet sizes are defined for the 1% population, so we scale them linearly.
-    pop_pct_str = job.pop_path.name.split('_')[-1].replace('pct', '')
-    pop_pct = int(pop_pct_str) if pop_pct_str.isdigit() else 1
+    # To keep DRT numbers proportional, we count the number of agents in the population.
+    # The DoE fleet sizes are defined for a 1% sample of the 31000 zone (~6399 agents).
+    pop_file = job.pop_path / "population.xml.gz"
+    if not pop_file.exists():
+        pop_file = job.pop_path / f"{job.pop_name}_population.xml.gz"
+
+    num_agents = 6399  # default fallback
+    if pop_file.exists():
+        res = subprocess.run(["zgrep", "-c", "<person ", str(pop_file)], capture_output=True, text=True)
+        if res.returncode == 0 and res.stdout.strip().isdigit():
+            num_agents = int(res.stdout.strip())
+
+    scale_factor = num_agents / 6399.0
+    log.info("[%s] Population size: %d agents. DRT scaling factor: %.2f",
+             job.output_tag, num_agents, scale_factor)
 
     cmd = [
         sys.executable, str(add_drt_script),
         "--base-dir", str(workdir),
-        "--nb-4", str(int(row.nb_4 * pop_pct)),
-        "--nb-6", str(int(row.nb_6 * pop_pct)),
-        "--nb-15", str(int(row.nb_15 * pop_pct)),
-        "--nb-20", str(int(row.nb_20 * pop_pct)),
+        "--nb-4", str(int(row.nb_4 * scale_factor)),
+        "--nb-6", str(int(row.nb_6 * scale_factor)),
+        "--nb-15", str(int(row.nb_15 * scale_factor)),
+        "--nb-20", str(int(row.nb_20 * scale_factor)),
         "--max-wait-time", str(row.max_wait_time),
         "--max-travel-time-alpha", str(row.max_travel_time_alpha),
         "--drt-constant", str(row.drt_constant),
@@ -493,8 +514,8 @@ def main():
     for p in pop_paths:
         if not p.is_dir():
             parser.error(f"Population directory does not exist: {p}")
-        if not (p / "config.xml").exists():
-            parser.error(f"No config.xml found in {p}")
+        if not (p / "config.xml").exists() and not (p / f"{p.name}_config.xml").exists():
+            parser.error(f"No config.xml or {p.name}_config.xml found in {p}")
 
     doe_path = Path(args.doe).resolve()
     if not doe_path.exists():

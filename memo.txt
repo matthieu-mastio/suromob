@@ -11,9 +11,8 @@ Eqasim
     découpage du shapefile, dans eqasim-java
         mvn install -pl core -am -DskipTests
 
-	mvn -pl ile_de_france exec:java -Dexec.mainClass="org.eqasim.core.scenario.cutter.RunScenarioCutter" -Dexec.args="--config-path ../generated_pops/haute_garonne_5pct/haute_garonne_5pct_config.xml --output-path ../generated_pops/31000_5pct/ --extent-path /home/mmastio/popsynth/get_31000_shapefile/emprise_31000_buffer.shp --threads 8" -Dexec.classpathScope=compile
 
-
+        mvn -pl ile_de_france exec:java -Dexec.mainClass="org.eqasim.core.scenario.cutter.RunScenarioCutter" -Dexec.args="--config-path ../generated_pops/haute_garonne_20pct/haute_garonne_20pct_config.xml --output-path ../generated_pops/31000_20pct/ --extent-path /home/mmastio/popsynth/src/get_31000_shapefile/emprise_31000_buffer.shp --threads 8" -Dexec.classpathScope=compile
 
 Lancer MATSim:
 	mvn package -pl ile_de_france -am -P standalone -DskipTests (recompiler le jar si nécessaire)
@@ -28,3 +27,5 @@ Analyse de sensibilité:
     nohup python3 src/run_sensitivity.py --populations /home/mmastio/popsynth/generated_pops/31000_1pct /home/mmastio/popsynth/generated_pops/31000_5pct /home/mmastio/popsynth/generated_pops/31000_10pct  --doe doe_LF0_80.csv --output-dir sa_output/  > out.txt 2>&1 &
     /home/mmastio/popsynth/eqasim-france/.venv/bin/python3 src/parse_outputs.py --sa-dir sa_output/
 
+Parsing de résultats:
+    uv run  src/parse_outputs.py   --sa-dir sa_output_LF1/ 
