@@ -209,13 +209,14 @@ def create_workdir(job: SimJob, base_workdir: Path) -> Path:
     workdir.mkdir(parents=True, exist_ok=True)
 
     for filename in SHARED_INPUT_FILES:
-        dst = workdir / filename
         src = job.pop_path / filename
+        dst = workdir / filename
         # If generic name doesn't exist, try looking for a prefixed version
         if not src.exists():
             prefixed = job.pop_path / f"{job.pop_name}_{filename}"
             if prefixed.exists():
                 src = prefixed
+                dst = workdir / prefixed.name
 
         if src.exists() and not dst.exists():
             os.symlink(src.resolve(), dst)

@@ -208,9 +208,18 @@ if __name__ == '__main__':
     capacities = [4] * args.nb_4 + [6] * args.nb_6 + [15] * args.nb_15 + [20] * args.nb_20
 
     base_dir = args.base_dir
+    
     network_path = os.path.join(base_dir, 'network.xml.gz')
-    vehicles_path = os.path.join(base_dir, 'drt_vehicles.xml')
+    if not os.path.exists(network_path):
+        networks = [f for f in os.listdir(base_dir) if f.endswith('network.xml.gz')]
+        if networks: network_path = os.path.join(base_dir, networks[0])
+
     config_in_path = os.path.join(base_dir, 'config.xml')
+    if not os.path.exists(config_in_path):
+        configs = [f for f in os.listdir(base_dir) if f.endswith('config.xml') and not f.endswith('config_drt.xml')]
+        if configs: config_in_path = os.path.join(base_dir, configs[0])
+
+    vehicles_path = os.path.join(base_dir, 'drt_vehicles.xml')
     config_out_path = os.path.join(base_dir, 'config_drt.xml')
     mode_params_path = os.path.join(base_dir, 'mode_parameters.yml')
 
