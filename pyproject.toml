@@ -9,4 +9,5 @@ dependencies = [
     "pandas",
     "scipy",
     "smt",
+    "matplotlib",
 ]

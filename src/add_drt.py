@@ -201,6 +201,9 @@ if __name__ == '__main__':
     parser.add_argument('--max-wait-time', type=float, default=1200.0, help="maxWaitTime for DRT (in seconds)")
     parser.add_argument('--max-travel-time-alpha', type=float, default=1.5, help="maxTravelTimeAlpha multiplier")
     parser.add_argument('--drt-constant', type=float, default=-0.5, help="Mode constant (ASC) for DRT in scoring")
+    parser.add_argument('--beta-travel-time', type=float, default=-0.06, help="Disutility of travel time per minute")
+    parser.add_argument('--beta-waiting-time', type=float, default=-0.09, help="Disutility of waiting time per minute")
+    parser.add_argument('--beta-rejection', type=float, default=-5.0, help="Disutility penalty for rejection probability")
 
     args = parser.parse_args()
 
@@ -223,9 +226,12 @@ if __name__ == '__main__':
     config_out_path = os.path.join(base_dir, 'config_drt.xml')
     mode_params_path = os.path.join(base_dir, 'mode_parameters.yml')
 
-    # Create the YAML file for Eqasim to load the DRT constant (alpha_u)
+    # Create the YAML file for Eqasim to load the DRT parameters into DiscreteModeChoice
     with open(mode_params_path, 'w') as f:
         f.write(f"drt.alpha_u: {args.drt_constant}\n")
+        f.write(f"drt.betaTravelTime_u_min: {args.beta_travel_time}\n")
+        f.write(f"drt.betaWaitingTime_u_min: {args.beta_waiting_time}\n")
+        f.write(f"drt.betaRejection_u: {args.beta_rejection}\n")
 
     create_drt_vehicles(vehicles_path, network_path=network_path, capacities=capacities)
     update_config(
