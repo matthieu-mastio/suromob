@@ -105,6 +105,22 @@ public class DrtFeedbackService implements BasicEventHandler, AfterMobsimListene
                         "[DrtFeedbackService-MSA] Iteration %d (update #%d, gamma=%.4f), Mode '%s': Served=%d, Rejected=%d, RejRate=%.2f%% (MSA=%.2f%%), Wait=%.1f min (MSA=%.1f min)",
                         iteration, stats.updateCount, gamma, mode, served, rejected, rawRejectionRate * 100.0,
                         stats.smoothedRejectionRate * 100.0, rawWaitTimeMin, stats.smoothedWaitTimeMin));
+            } else if (stats.hasHistory) {
+                // Fleet was idle this iteration (0 requests).
+                // Update MSA towards 0% rejection and fast wait time (vehicles standing by)
+                stats.updateCount++;
+                double gamma = 1.0 / Math.pow(stats.updateCount, MSA_EXPONENT);
+                double idleRejectionRate = 0.0;
+                double idleWaitTimeMin = 3.0;
+
+                stats.smoothedRejectionRate = (1.0 - gamma) * stats.smoothedRejectionRate
+                        + gamma * idleRejectionRate;
+                stats.smoothedWaitTimeMin = (1.0 - gamma) * stats.smoothedWaitTimeMin
+                        + gamma * idleWaitTimeMin;
+
+                log.info(String.format(
+                        "[DrtFeedbackService-MSA] Iteration %d (update #%d, gamma=%.4f), Mode '%s': IDLE (0 requests) -> RejRate MSA=%.2f%%, Wait MSA=%.1f min",
+                        iteration, stats.updateCount, gamma, mode, stats.smoothedRejectionRate * 100.0, stats.smoothedWaitTimeMin));
             }
         }
     }

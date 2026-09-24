@@ -25,15 +25,15 @@ V_DRT = alpha_DRT + beta_tt * t_tt + beta_wait * t_wait + beta_cost * c + beta_r
 
 Où :
 - $\alpha_{\text{DRT}} = -0.5$ : Constante spécifique du mode (ASC).
-- $\beta_{\text{tt}} = -0.06\text{ util/min}$ ($-3.6\text{ util/h}$) : Désutilité marginale du temps à bord (alignée sur la voiture).
-- $\beta_{\text{wait}} = -0.09\text{ util/min}$ ($-5.4\text{ util/h}$) : Désutilité du temps d'attente (pénalisée 1,5× plus que le temps à bord).
+- $\beta_{\text{tt}} = -0.06\text{ util/min}$ ($-3.6\text{ util/h}$) : Désutilité marginale du temps à bord (alignée sur la voiture). Le temps de trajet effectif est prédit par $\text{directRideTime} \times 1.2$ (détour moyen usuel de 20 %), évitant la surévaluation artificielle du buffer SLA de `maxTravelTime` (+20 min).
+- $\beta_{\text{wait}} = -0.09\text{ util/min}$ ($-5.4\text{ util/h}$) : Désutilité du temps d'attente (pénalisée 1,5× plus que le temps à bord). Temps d'attente initial à 5 min au démarrage.
 - $\beta_{\text{cost}} = -0.13\text{ util/€}$ : Sensibilité au coût monétaire.
-- $\beta_{\text{rej}} = -5.0\text{ util}$ : Pénalité directe liée au risque de rejet.
+- $\beta_{\text{rej}} = -1.5\text{ util}$ : Pénalité calibrée liée au risque de rejet.
 
 > **Équivalence temps de trajet de $\beta_{\text{rej}}$ :**  
-> Une pénalité de $-5.0$ pour un rejet certain ($P_{\text{rej}} = 1.0$) équivaut à un allongement perçu du temps de trajet de :  
-> $$\Delta t_{\text{tt}} = \frac{-5.0}{-0.06} \approx 83.3\text{ minutes}$$  
-> Si $P_{\text{rej}} = 50\%$, la pénalité équivaut à $\approx 41.7\text{ minutes}$ supplémentaires. Dès que la flotte sature, la chute drastique de $V_{\text{DRT}}$ force les agents à se reporter sur les modes alternatifs (TC, marche, vélo, voiture).
+> Une pénalité de $-1.5$ pour un rejet certain ($P_{\text{rej}} = 1.0$) équivaut à un allongement perçu du temps de trajet de :  
+> $$\Delta t_{\text{tt}} = \frac{-1.5}{-0.06} = 25.0\text{ minutes}$$  
+> Si $P_{\text{rej}} = 20\%$, la pénalité équivaut à $+5\text{ minutes}$. Dès que la flotte sature, la dégradation progressive de $V_{\text{DRT}}$ régule la demande vers les modes alternatifs sans provoquer l'extinction brutale du mode.
 
 ---
 
@@ -43,10 +43,11 @@ Pour éviter les phénomènes de sur-réaction, de résonance ou d'oscillations 
 $$\gamma_n = \frac{1}{n^{0.75}}$$
 
 À chaque itération $n$ (calculé lors de l'événement `notifyAfterMobsim`) :
-$$P_{\text{rej}}^{(n)} = (1 - \gamma_n) \cdot P_{\text{rej}}^{(n-1)} + \gamma_n \cdot p_{\text{obs}}^{(n)}$$
-$$t_{\text{wait}}^{(n)} = (1 - \gamma_n) \cdot t_{\text{wait}}^{(n-1)} + \gamma_n \cdot \bar{t}_{\text{wait, obs}}^{(n)}$$
-
-Ce lissage garantit une adaptation rapide lors des premières itérations tout en assurant une convergence rigoureuse vers l'équilibre offre/demande au fil des itérations.
+- **Si la flotte a des requêtes ($N > 0$)** :
+  $$P_{\text{rej}}^{(n)} = (1 - \gamma_n) \cdot P_{\text{rej}}^{(n-1)} + \gamma_n \cdot p_{\text{obs}}^{(n)}$$
+  $$t_{\text{wait}}^{(n)} = (1 - \gamma_n) \cdot t_{\text{wait}}^{(n-1)} + \gamma_n \cdot \bar{t}_{\text{wait, obs}}^{(n)}$$
+- **Si aucun agent n'a fait de demande ($N = 0$, flotte disponible)** :
+  Pour éviter le piège d'extinction irréversible (absorbing state), le modèle réinjecte une observation de flotte libre ($p_{\text{obs}} = 0\,\%$, $t_{\text{wait}} = 3\text{ min}$) et met à jour les métriques lissées via MSA afin de réinviter les agents à évaluer le DRT.
 
 ---
 

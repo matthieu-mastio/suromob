@@ -35,11 +35,16 @@ public class DefaultDrtPredictor implements DrtPredictor {
             if (costModels.containsKey(leg.getMode())) {
                 DrtRoute route = (DrtRoute) leg.getRoute();
 
-                // Travel time estimate
-                travelTime_min = route.getMaxTravelTime() / 60.0;
+                // Travel time estimate: use direct ride time with typical 20% pooling detour (avoid SLA maxTravelTime buffer)
+                double directRideTime = route.getDirectRideTime();
+                if (directRideTime > 0.0) {
+                    travelTime_min = (directRideTime * 1.2) / 60.0;
+                } else {
+                    travelTime_min = route.getMaxTravelTime() / 60.0;
+                }
 
-                // Waiting time from feedback (or config maxWaitDuration if no history)
-                double fallbackWaitTime_min = route.getConstraints().maxWaitDuration() / 60.0;
+                // Waiting time from feedback (or realistic 5.0 min fallback if no history)
+                double fallbackWaitTime_min = Math.min(5.0, route.getConstraints().maxWaitDuration() / 60.0);
                 waitingTime_min = feedbackService.getAverageWaitingTimeMin(leg.getMode(), fallbackWaitTime_min);
 
                 // Rejection probability from feedback

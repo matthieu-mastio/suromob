@@ -203,7 +203,7 @@ if __name__ == '__main__':
     parser.add_argument('--drt-constant', type=float, default=-0.5, help="Mode constant (ASC) for DRT in scoring")
     parser.add_argument('--beta-travel-time', type=float, default=-0.06, help="Disutility of travel time per minute")
     parser.add_argument('--beta-waiting-time', type=float, default=-0.09, help="Disutility of waiting time per minute")
-    parser.add_argument('--beta-rejection', type=float, default=-5.0, help="Disutility penalty for rejection probability")
+    parser.add_argument('--beta-rejection', type=float, default=-1.5, help="Disutility penalty for rejection probability")
 
     args = parser.parse_args()
 

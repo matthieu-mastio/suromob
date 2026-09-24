@@ -72,7 +72,7 @@ public class IDFModeParameters extends ModeParameters {
 		parameters.drt.betaTravelTime_u_min = -0.06;
 		parameters.drt.betaWaitingTime_u_min = -0.09;
 		parameters.drt.betaAccessEgressTime_u_min = -0.08;
-		parameters.drt.betaRejection_u = -5.0;
+		parameters.drt.betaRejection_u = -1.5;
 
 		return parameters;
 	}

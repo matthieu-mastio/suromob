@@ -279,10 +279,10 @@ def run_add_drt(job: SimJob, workdir: Path) -> Path:
     return workdir / "config_drt.xml"
 
 
-def run_simulation(job: SimJob, workdir: Path, jar_path: str) -> Path:
+def run_simulation(job: SimJob, workdir: Path, jar_path: str) -> tuple[Path, float]:
     """
     Launch the MATSim simulation and wait for it to complete.
-    Returns the path to the simulation_output directory.
+    Returns (path to simulation_output directory, simulation_duration_seconds).
     """
     config_path = workdir / "config_drt.xml"
     sim_output = workdir / "simulation_output"
@@ -299,6 +299,7 @@ def run_simulation(job: SimJob, workdir: Path, jar_path: str) -> Path:
              job.output_tag, job.heap_gb, " ".join(cmd))
 
     log_file = workdir / "sim.log"
+    sim_start = time.time()
     with open(log_file, "w") as lf:
         proc = subprocess.run(
             cmd,
@@ -306,15 +307,17 @@ def run_simulation(job: SimJob, workdir: Path, jar_path: str) -> Path:
             stdout=lf,
             stderr=subprocess.STDOUT,
         )
+    sim_duration = time.time() - sim_start
 
     if proc.returncode != 0:
         raise RuntimeError(
-            f"Simulation failed for {job.output_tag} (exit code {proc.returncode}). "
-            f"See log: {log_file}"
+            f"Simulation failed for {job.output_tag} (exit code {proc.returncode}, "
+            f"elapsed {sim_duration:.1f}s). See log: {log_file}"
         )
 
-    log.info("[%s] Simulation completed successfully", job.output_tag)
-    return sim_output
+    log.info("[%s] Simulation completed successfully in %.1fs (%.2f min)",
+             job.output_tag, sim_duration, sim_duration / 60.0)
+    return sim_output, sim_duration
 
 
 def find_last_iteration(sim_output: Path) -> Optional[Path]:
@@ -331,7 +334,7 @@ def find_last_iteration(sim_output: Path) -> Optional[Path]:
 
 
 def collect_results(job: SimJob, workdir: Path, sim_output: Path,
-                    output_dir: Path) -> None:
+                    output_dir: Path, timing_info: Optional[dict] = None) -> None:
     """
     Copy the last iteration + root-level output files to the results directory.
     Structure:
@@ -342,6 +345,7 @@ def collect_results(job: SimJob, workdir: Path, sim_output: Path,
                 sim.log           ← simulation log
                 config_drt.xml    ← config used for this run
                 drt_vehicles.xml  ← vehicles used for this run
+                computation_time.csv ← timing of this simulation run
     """
     dest = output_dir / job.output_tag
     dest.mkdir(parents=True, exist_ok=True)
@@ -357,7 +361,7 @@ def collect_results(job: SimJob, workdir: Path, sim_output: Path,
                  job.output_tag, last_iter.name, dest_iter)
     else:
         log.warning("[%s] No iteration directories found in %s",
-                    job.output_tag, sim_output)
+                     job.output_tag, sim_output)
 
     # 2. Copy root-level output files (not directories)
     for item in sim_output.iterdir():
@@ -370,14 +374,39 @@ def collect_results(job: SimJob, workdir: Path, sim_output: Path,
         if src.exists():
             shutil.copy2(src, dest / fname)
 
+    # 4. Save timing metrics in experiment directory
+    if timing_info:
+        with open(dest / "computation_time.csv", "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["metric", "value"])
+            for k, v in timing_info.items():
+                writer.writerow([k, v])
+
     log.info("[%s] Results collected in %s", job.output_tag, dest)
 
-
-# ── Orchestrator ─────────────────────────────────────────────────────────────
 
 # Global lock and counter for RAM allocation tracking
 _ram_lock = threading.Lock()
 _ram_allocated_gb = 0
+_csv_lock = threading.Lock()
+
+
+def record_job_timing(output_dir: Path, timing_info: dict) -> None:
+    """Thread-safely append simulation timing to computation_times.csv in output_dir."""
+    csv_file = output_dir / "computation_times.csv"
+    fieldnames = [
+        "output_tag", "population", "status",
+        "sim_duration_s", "sim_duration_min",
+        "total_job_duration_s", "total_job_duration_min",
+        "start_time", "end_time"
+    ]
+    with _csv_lock:
+        file_exists = csv_file.exists()
+        with open(csv_file, "a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(timing_info)
 
 
 def run_single_job(job: SimJob, jar_path: str, output_dir: Path,
@@ -393,6 +422,9 @@ def run_single_job(job: SimJob, jar_path: str, output_dir: Path,
         return f"SKIPPED: {tag} (already exists)"
 
     workdir = None
+    job_start = time.time()
+    start_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(job_start))
+
     try:
         # Wait until there's enough RAM available
         while True:
@@ -412,19 +444,45 @@ def run_single_job(job: SimJob, jar_path: str, output_dir: Path,
         run_add_drt(job, workdir)
 
         # Step 2: run the simulation
-        sim_output = run_simulation(job, workdir, jar_path)
+        sim_output, sim_duration = run_simulation(job, workdir, jar_path)
+        job_duration = time.time() - job_start
+        end_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+
+        timing_info = {
+            "output_tag": tag,
+            "population": job.pop_name,
+            "status": "OK",
+            "sim_duration_s": f"{sim_duration:.2f}",
+            "sim_duration_min": f"{sim_duration / 60.0:.2f}",
+            "total_job_duration_s": f"{job_duration:.2f}",
+            "total_job_duration_min": f"{job_duration / 60.0:.2f}",
+            "start_time": start_time_str,
+            "end_time": end_time_str,
+        }
 
         # Step 3: collect results
-        collect_results(job, workdir, sim_output, output_dir)
+        collect_results(job, workdir, sim_output, output_dir, timing_info=timing_info)
 
-        # Step 4: cleanup workdir to free disk space
-        # cleanup_workdir(workdir)
-        # workdir = None
+        # Step 4: record in central computation_times.csv
+        record_job_timing(output_dir, timing_info)
 
         return f"OK: {tag}"
 
     except Exception as e:
         log.error("[%s] FAILED: %s", tag, e)
+        job_duration = time.time() - job_start
+        end_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        record_job_timing(output_dir, {
+            "output_tag": tag,
+            "population": job.pop_name,
+            "status": f"FAILED: {e}",
+            "sim_duration_s": "",
+            "sim_duration_min": "",
+            "total_job_duration_s": f"{job_duration:.2f}",
+            "total_job_duration_min": f"{job_duration / 60.0:.2f}",
+            "start_time": start_time_str,
+            "end_time": end_time_str,
+        })
         # On failure, keep workdir for debugging but log its location
         if workdir and workdir.exists():
             log.error("[%s] Workdir preserved for debugging: %s", tag, workdir)

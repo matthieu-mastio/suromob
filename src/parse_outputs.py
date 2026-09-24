@@ -73,6 +73,16 @@ def process_experiment(exp_dir: Path) -> dict:
     total_capacity = read_fleet_capacity(exp_dir)
     row["total_capacity"] = total_capacity
 
+    # ── Initialize default metrics ───────────────────────────────────────
+    row["rejection_rate"] = None
+    row["wait_average"] = None
+    row["drt_modal_share"] = 0.0
+    row["total_direct_distance"] = 0.0
+    row["total_distance"] = 0.0
+    row["direct_distance_ratio"] = 0.0
+    row["avg_empty_seats"] = float(total_capacity)
+    row["avg_empty_seat_ratio"] = 1.0 if total_capacity > 0 else None
+
     # ── Rejection rate & average waiting time (last iteration) ───────────
     f = exp_dir / f"drt_customer_stats_{DRT_MODE}.csv"
     if f.exists():
@@ -97,15 +107,19 @@ def process_experiment(exp_dir: Path) -> dict:
         df = pd.read_csv(f_legs, sep=";")
         if not df.empty and "directRideDistance" in df.columns:
             row["total_direct_distance"] = df["directRideDistance"].sum()
+        else:
+            row["total_direct_distance"] = 0.0
 
     if f_veh.exists():
         df = pd.read_csv(f_veh, sep=";")
         if not df.empty:
             last = df.loc[df["iteration"].idxmax()]
-            row["total_distance"] = last.get("totalDistance")
+            row["total_distance"] = last.get("totalDistance", 0.0)
 
     if row.get("total_direct_distance") and row.get("total_distance") and row["total_distance"] > 0:
         row["direct_distance_ratio"] = row["total_direct_distance"] / row["total_distance"]
+    else:
+        row["direct_distance_ratio"] = 0.0
 
     # ── Occupancy: average empty seats ───────────────────────────────────
     f = exp_dir / f"output_occupancy_time_profiles_{DRT_MODE}.txt"
@@ -121,6 +135,36 @@ def process_experiment(exp_dir: Path) -> dict:
             df["empty_capacity"] = total_capacity - df["passengers"]
             row["avg_empty_seats"] = df["empty_capacity"].mean()
             row["avg_empty_seat_ratio"] = row["avg_empty_seats"] / total_capacity
+
+    # ── Computation time (from computation_time.csv or stopwatch.csv) ────
+    sim_time_s = None
+    f_comp = exp_dir / "computation_time.csv"
+    if f_comp.exists():
+        try:
+            df_comp = pd.read_csv(f_comp)
+            if "metric" in df_comp.columns and "value" in df_comp.columns:
+                m_dict = dict(zip(df_comp["metric"], df_comp["value"]))
+                val = m_dict.get("sim_duration_s")
+                if val is not None:
+                    sim_time_s = float(val)
+            elif "sim_duration_s" in df_comp.columns and not df_comp.empty:
+                sim_time_s = float(df_comp["sim_duration_s"].iloc[0])
+        except Exception:
+            pass
+
+    if sim_time_s is None:
+        f_stopwatch = exp_dir / "stopwatch.csv"
+        if f_stopwatch.exists():
+            try:
+                df_sw = pd.read_csv(f_stopwatch, sep=";")
+                col = [c for c in df_sw.columns if c.startswith("iteration.") or c == "iteration.1"]
+                if col:
+                    sim_time_s = pd.to_timedelta(df_sw[col[0]], errors="coerce").sum().total_seconds()
+            except Exception:
+                pass
+
+    row["computation_time_s"] = round(sim_time_s, 2) if sim_time_s is not None else None
+    row["computation_time_min"] = round(sim_time_s / 60.0, 2) if sim_time_s is not None else None
 
     return row
 
@@ -180,12 +224,13 @@ def main():
         "nb_4", "nb_6", "nb_15", "nb_20",
         "max_wait_time", "max_travel_time_alpha", "drt_constant",
         "total_capacity",
+        "computation_time_s", "computation_time_min",
         "rejection_rate", "wait_average",
         "drt_modal_share",
         "total_direct_distance", "total_distance", "direct_distance_ratio",
         "avg_empty_seats", "avg_empty_seat_ratio",
     ]
-    df = pd.DataFrame(rows)[col_order]
+    df = pd.DataFrame(rows).reindex(columns=col_order)
     df.to_csv(output_path, index=False)
 
     print(f"\n{'='*60}")
