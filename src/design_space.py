@@ -8,18 +8,18 @@ def create_amod_design_space():
     pour le problème d'optimisation AMoD (Toulouse).
     
     L'espace comprend :
-    - 4 variables entières pour la composition de la flotte (0 à 15 navettes par type).
+    - 4 variables pour la densité de la flotte (0 à 5 navettes par type pour 1000 personnes).
     - 1 variable entière pour le temps d'attente maximum (300 à 1800 secondes).
     - 1 variable continue pour l'élasticité du temps de trajet (alpha).
     - 1 variable continue pour le score / utilité de l'AMoD par rapport à la voiture.
     """
     
     ds = DesignSpace([
-        # --- 1. Composition de la flotte (Nombres entiers de navettes) ---
-        IntegerVariable(0, 5),  # nb_shuttles_4_seats
-        IntegerVariable(0, 5),  # nb_shuttles_6_seats
-        IntegerVariable(0, 5),  # nb_shuttles_15_seats
-        IntegerVariable(0, 5),  # nb_shuttles_20_seats
+        # --- 1. Densité de la flotte (Nb de navettes pour 1000 personnes) ---
+        IntegerVariable(0, 5),  # density_4_seats (navettes 4 places / 1000 personnes)
+        IntegerVariable(0, 5),  # density_6_seats (navettes 6 places / 1000 personnes)
+        IntegerVariable(0, 5),  # density_15_seats (navettes 15 places / 1000 personnes)
+        IntegerVariable(0, 5),  # density_20_seats (navettes 20 places / 1000 personnes)
         
         # --- 2. Contraintes de Service et Rebalancing ---
         # maxWaitTime (en secondes) : de 5 minutes à 30 minutes

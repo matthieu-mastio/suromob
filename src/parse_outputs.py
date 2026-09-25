@@ -23,17 +23,17 @@ def parse_tag(tag: str) -> dict:
     Format: <pop>_v<4>-<6>-<15>-<20>_w<wait>_a<alpha>_s<score>
     """
     m = re.match(
-        r"^(.+?)_v(\d+)-(\d+)-(\d+)-(\d+)_w(\d+)_a([\d.]+)_s(-?[\d.]+)$",
+        r"^(.+?)_v([\d.]+)-([\d.]+)-([\d.]+)-([\d.]+)_w(\d+)_a([\d.]+)_s(-?[\d.]+)$",
         tag,
     )
     if not m:
         return {}
     return {
         "population": m.group(1),
-        "nb_4": int(m.group(2)),
-        "nb_6": int(m.group(3)),
-        "nb_15": int(m.group(4)),
-        "nb_20": int(m.group(5)),
+        "nb_4": float(m.group(2)) if "." in m.group(2) else int(m.group(2)),
+        "nb_6": float(m.group(3)) if "." in m.group(3) else int(m.group(3)),
+        "nb_15": float(m.group(4)) if "." in m.group(4) else int(m.group(4)),
+        "nb_20": float(m.group(5)) if "." in m.group(5) else int(m.group(5)),
         "max_wait_time": int(m.group(6)),
         "max_travel_time_alpha": float(m.group(7)),
         "drt_constant": float(m.group(8)),

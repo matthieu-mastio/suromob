@@ -79,10 +79,10 @@ log = logging.getLogger("sensitivity")
 class DOERow:
     """One row from the Design of Experiments CSV."""
     index: int
-    nb_4: int
-    nb_6: int
-    nb_15: int
-    nb_20: int
+    nb_4: float
+    nb_6: float
+    nb_15: float
+    nb_20: float
     max_wait_time: float
     max_travel_time_alpha: float
     drt_constant: float
@@ -90,8 +90,11 @@ class DOERow:
     @property
     def label(self) -> str:
         """Short label used in folder names."""
+        def fmt(val: float) -> str:
+            return f"{int(val)}" if float(val).is_integer() else f"{val:.2f}"
+
         return (
-            f"v{self.nb_4}-{self.nb_6}-{self.nb_15}-{self.nb_20}"
+            f"v{fmt(self.nb_4)}-{fmt(self.nb_6)}-{fmt(self.nb_15)}-{fmt(self.nb_20)}"
             f"_w{int(self.max_wait_time)}"
             f"_a{self.max_travel_time_alpha:.2f}"
             f"_s{self.drt_constant:.2f}"
@@ -121,10 +124,10 @@ def parse_doe(csv_path: str) -> List[DOERow]:
                 continue
             rows.append(DOERow(
                 index=i,
-                nb_4=int(row["4_seats"]),
-                nb_6=int(row["6_seats"]),
-                nb_15=int(row["15_seats"]),
-                nb_20=int(row["20_seats"]),
+                nb_4=float(row["4_seats"]),
+                nb_6=float(row["6_seats"]),
+                nb_15=float(row["15_seats"]),
+                nb_20=float(row["20_seats"]),
                 max_wait_time=float(row["WaitTime"]),
                 max_travel_time_alpha=float(row["Alpha"]),
                 drt_constant=float(row["Score"]),
@@ -240,29 +243,45 @@ def run_add_drt(job: SimJob, workdir: Path) -> Path:
     add_drt_script = Path(__file__).parent / "add_drt.py"
     row = job.doe_row
 
-    # To keep DRT numbers proportional, we count the number of agents in the population.
-    # The DoE fleet sizes are defined for a 1% sample of the 31000 zone (~6399 agents).
+    # The DoE fleet sizes are defined as densities (nb of vehicles per 1000 persons).
+    # To keep DRT supply proportional to demand, we count the number of agents in the population.
     pop_file = job.pop_path / "population.xml.gz"
     if not pop_file.exists():
         pop_file = job.pop_path / f"{job.pop_name}_population.xml.gz"
 
-    num_agents = 6399  # default fallback
+    num_agents = 1000  # default fallback if population file is missing
     if pop_file.exists():
         res = subprocess.run(["zgrep", "-c", "<person ", str(pop_file)], capture_output=True, text=True)
         if res.returncode == 0 and res.stdout.strip().isdigit():
             num_agents = int(res.stdout.strip())
 
-    scale_factor = num_agents / 6399.0
-    log.info("[%s] Population size: %d agents. DRT scaling factor: %.2f",
-             job.output_tag, num_agents, scale_factor)
+    # Density is defined per 1000 persons:
+    density_scale = num_agents / 1000.0
+
+    def calc_nb_vehicles(density: float) -> int:
+        if density <= 0.0:
+            return 0
+        return max(1, int(round(density * density_scale)))
+
+    nb_4 = calc_nb_vehicles(row.nb_4)
+    nb_6 = calc_nb_vehicles(row.nb_6)
+    nb_15 = calc_nb_vehicles(row.nb_15)
+    nb_20 = calc_nb_vehicles(row.nb_20)
+
+    log.info(
+        "[%s] Population size: %d agents. Fleet density factor (per 1000 persons): %.3f -> "
+        "nb_4=%d, nb_6=%d, nb_15=%d, nb_20=%d (total=%d)",
+        job.output_tag, num_agents, density_scale, nb_4, nb_6, nb_15, nb_20,
+        nb_4 + nb_6 + nb_15 + nb_20
+    )
 
     cmd = [
         sys.executable, str(add_drt_script),
         "--base-dir", str(workdir),
-        "--nb-4", str(int(row.nb_4 * scale_factor)),
-        "--nb-6", str(int(row.nb_6 * scale_factor)),
-        "--nb-15", str(int(row.nb_15 * scale_factor)),
-        "--nb-20", str(int(row.nb_20 * scale_factor)),
+        "--nb-4", str(nb_4),
+        "--nb-6", str(nb_6),
+        "--nb-15", str(nb_15),
+        "--nb-20", str(nb_20),
         "--max-wait-time", str(row.max_wait_time),
         "--max-travel-time-alpha", str(row.max_travel_time_alpha),
         "--drt-constant", str(row.drt_constant),

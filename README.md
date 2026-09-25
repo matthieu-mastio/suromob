@@ -78,10 +78,10 @@ This is repeated for each sample rate (1%, 5%, 10%, 25%, 50%) to create populati
 
 | Variable | Type | Range | Description |
 |----------|------|-------|-------------|
-| `4_seats` | Integer | 0–15 | Number of 4-seat shuttles |
-| `6_seats` | Integer | 0–15 | Number of 6-seat shuttles |
-| `15_seats` | Integer | 0–15 | Number of 15-seat shuttles |
-| `20_seats` | Integer | 0–15 | Number of 20-seat shuttles |
+| `4_seats` | Integer | 0–5 | Density of 4-seat shuttles (veh / 1000 persons) |
+| `6_seats` | Integer | 0–5 | Density of 6-seat shuttles (veh / 1000 persons) |
+| `15_seats` | Integer | 0–5 | Density of 15-seat shuttles (veh / 1000 persons) |
+| `20_seats` | Integer | 0–5 | Density of 20-seat shuttles (veh / 1000 persons) |
 | `WaitTime` | Integer | 300–1800 s | Maximum passenger wait time |
 | `Alpha` | Float | 1.001–2.0 | Travel time detour factor (`maxTravelTimeAlpha`) |
 | `Score` | Float | -0.5–0.5 | Mode utility constant (ASC) for DRT vs. car |
