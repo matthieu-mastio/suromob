@@ -11,8 +11,8 @@ public class FlatDrtCostModel extends AbstractCostModel {
 
     public FlatDrtCostModel() {
         super("drt");
-        // Tarif unique fixé à 2.00 euros pour le DRT
-        this.flatFare = 2.0;
+        // Service DRT gratuit (tarif fixé à 0.00 euro)
+        this.flatFare = 0.0;
     }
 
     @Override

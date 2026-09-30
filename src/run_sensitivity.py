@@ -243,20 +243,20 @@ def run_add_drt(job: SimJob, workdir: Path) -> Path:
     add_drt_script = Path(__file__).parent / "add_drt.py"
     row = job.doe_row
 
-    # The DoE fleet sizes are defined as densities (nb of vehicles per 1000 persons).
+    # The DoE fleet sizes are defined as densities (nb of vehicles per 5 000 persons).
     # To keep DRT supply proportional to demand, we count the number of agents in the population.
     pop_file = job.pop_path / "population.xml.gz"
     if not pop_file.exists():
         pop_file = job.pop_path / f"{job.pop_name}_population.xml.gz"
 
-    num_agents = 1000  # default fallback if population file is missing
+    num_agents = 5000  # default fallback if population file is missing
     if pop_file.exists():
         res = subprocess.run(["zgrep", "-c", "<person ", str(pop_file)], capture_output=True, text=True)
         if res.returncode == 0 and res.stdout.strip().isdigit():
             num_agents = int(res.stdout.strip())
 
-    # Density is defined per 1000 persons:
-    density_scale = num_agents / 1000.0
+    # Density is defined per 5 000 persons:
+    density_scale = num_agents / 5000.0
 
     def calc_nb_vehicles(density: float) -> int:
         if density <= 0.0:
@@ -267,12 +267,19 @@ def run_add_drt(job: SimJob, workdir: Path) -> Path:
     nb_6 = calc_nb_vehicles(row.nb_6)
     nb_15 = calc_nb_vehicles(row.nb_15)
     nb_20 = calc_nb_vehicles(row.nb_20)
+    total_veh = nb_4 + nb_6 + nb_15 + nb_20
+
+    if total_veh == 0:
+        raise ValueError(
+            f"[{job.output_tag}] Total vehicle fleet is 0 (nb_4={nb_4}, nb_6={nb_6}, "
+            f"nb_15={nb_15}, nb_20={nb_20}). Cannot run DRT simulation with an empty fleet."
+        )
 
     log.info(
-        "[%s] Population size: %d agents. Fleet density factor (per 1000 persons): %.3f -> "
+        "[%s] Population size: %d agents. Fleet density factor (per 5 000 persons): %.4f -> "
         "nb_4=%d, nb_6=%d, nb_15=%d, nb_20=%d (total=%d)",
         job.output_tag, num_agents, density_scale, nb_4, nb_6, nb_15, nb_20,
-        nb_4 + nb_6 + nb_15 + nb_20
+        total_veh
     )
 
     cmd = [

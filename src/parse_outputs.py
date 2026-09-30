@@ -80,8 +80,7 @@ def process_experiment(exp_dir: Path) -> dict:
     row["total_direct_distance"] = 0.0
     row["total_distance"] = 0.0
     row["direct_distance_ratio"] = 0.0
-    row["avg_empty_seats"] = float(total_capacity)
-    row["avg_empty_seat_ratio"] = 1.0 if total_capacity > 0 else None
+    row["load_factor"] = 0.0
 
     # ── Rejection rate & average waiting time (last iteration) ───────────
     f = exp_dir / f"drt_customer_stats_{DRT_MODE}.csv"
@@ -121,20 +120,46 @@ def process_experiment(exp_dir: Path) -> dict:
     else:
         row["direct_distance_ratio"] = 0.0
 
-    # ── Occupancy: average empty seats ───────────────────────────────────
-    f = exp_dir / f"output_occupancy_time_profiles_{DRT_MODE}.txt"
-    if f.exists() and total_capacity > 0:
-        df = pd.read_csv(f, sep=";")
-        if not df.empty:
-            df = df[df["time"] <= "24:00:00"]
-            occ_cols = [c for c in df.columns if re.match(r"\d+ pax", c)]
-            occupancy_levels = [int(re.search(r"\d+", c).group()) for c in occ_cols]
-            df["passengers"] = sum(
-                df[col] * occ for col, occ in zip(occ_cols, occupancy_levels)
-            )
-            df["empty_capacity"] = total_capacity - df["passengers"]
-            row["avg_empty_seats"] = df["empty_capacity"].mean()
-            row["avg_empty_seat_ratio"] = row["avg_empty_seats"] / total_capacity
+    # ── Load factor: passenger-km / seat-km driven ───────────────────────
+    f_vdist = exp_dir / f"output_vehicleDistanceStats_{DRT_MODE}.csv"
+    if f_vdist.exists():
+        try:
+            df_vdist = pd.read_csv(f_vdist, sep=";")
+            v_file = exp_dir / "drt_vehicles.xml"
+            if v_file.exists():
+                tree = ET.parse(v_file)
+                root = tree.getroot()
+                ns = root.tag.split("}")[0] + "}" if root.tag.startswith("{") else ""
+                caps = {
+                    v.get("id"): int(v.get("capacity"))
+                    for v in root.findall(f"{ns}vehicle")
+                    if v.get("capacity")
+                }
+                df_vdist["capacity"] = df_vdist["vehicleId"].map(caps).fillna(0)
+            else:
+                df_vdist["capacity"] = 0
+
+            df_vdist["seat_distance"] = df_vdist["capacity"] * df_vdist["drivenDistance_m"]
+            tot_pax_dist = df_vdist["passengerDistanceTraveled_pm"].sum()
+            tot_seat_dist = df_vdist["seat_distance"].sum()
+            if tot_seat_dist > 0:
+                row["load_factor"] = round(tot_pax_dist / tot_seat_dist, 4)
+        except Exception:
+            pass
+    elif f_veh.exists() and total_capacity > 0:
+        try:
+            df_v = pd.read_csv(f_veh, sep=";")
+            if not df_v.empty:
+                last_v = df_v.loc[df_v["iteration"].idxmax()]
+                tot_pax_dist = last_v.get("totalPassengerDistanceTraveled", 0.0)
+                tot_dist = last_v.get("totalDistance", 0.0)
+                num_veh = last_v.get("vehicles", 1)
+                avg_cap = total_capacity / num_veh if num_veh > 0 else 0
+                tot_seat_dist = tot_dist * avg_cap
+                if tot_seat_dist > 0:
+                    row["load_factor"] = round(tot_pax_dist / tot_seat_dist, 4)
+        except Exception:
+            pass
 
     # ── Computation time (from computation_time.csv or stopwatch.csv) ────
     sim_time_s = None
@@ -228,7 +253,7 @@ def main():
         "rejection_rate", "wait_average",
         "drt_modal_share",
         "total_direct_distance", "total_distance", "direct_distance_ratio",
-        "avg_empty_seats", "avg_empty_seat_ratio",
+        "load_factor",
     ]
     df = pd.DataFrame(rows).reindex(columns=col_order)
     df.to_csv(output_path, index=False)

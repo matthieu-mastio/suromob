@@ -36,7 +36,7 @@ DEFAULT_METRICS = [
     "wait_average",
     "drt_modal_share",
     "direct_distance_ratio",
-    "avg_empty_seat_ratio"
+    "load_factor"
 ]
 
 METRIC_LABELS = {
@@ -44,7 +44,7 @@ METRIC_LABELS = {
     "wait_average": "Mean Waiting Time (s)",
     "drt_modal_share": "DRT Modal Share (-)",
     "direct_distance_ratio": "Direct Distance Ratio (-)",
-    "avg_empty_seat_ratio": "Empty Seat Ratio (-)"
+    "load_factor": "Load Factor (-)"
 }
 
 SAMPLING_ORDER = ["1pct", "5pct", "10pct", "20pct", "25pct", "50pct"]

@@ -36,8 +36,7 @@ def get_random_links(network_path, num_links):
 def create_drt_vehicles(path, network_path="network.xml.gz", capacities=[]):
     num_vehicles = len(capacities)
     if num_vehicles == 0:
-        print("No vehicles to create.")
-        return
+        raise ValueError("Cannot create DRT vehicles: fleet capacity list is empty (0 vehicles).")
 
     start_links = get_random_links(network_path, num_vehicles)
     if not start_links:

@@ -27,7 +27,7 @@ Où :
 - $\alpha_{\text{DRT}} = -0.5$ : Constante spécifique du mode (ASC).
 - $\beta_{\text{tt}} = -0.06\text{ util/min}$ ($-3.6\text{ util/h}$) : Désutilité marginale du temps à bord (alignée sur la voiture). Le temps de trajet effectif est prédit par $\text{directRideTime} \times 1.2$ (détour moyen usuel de 20 %), évitant la surévaluation artificielle du buffer SLA de `maxTravelTime` (+20 min).
 - $\beta_{\text{wait}} = -0.09\text{ util/min}$ ($-5.4\text{ util/h}$) : Désutilité du temps d'attente (pénalisée 1,5× plus que le temps à bord). Temps d'attente initial à 5 min au démarrage.
-- $\beta_{\text{cost}} = -0.13\text{ util/€}$ : Sensibilité au coût monétaire.
+- $\beta_{\text{cost}} = -0.13\text{ util/€}$ : Sensibilité au coût monétaire ($c = 0{,}00\text{ €}$ pour le service gratuit).
 - $\beta_{\text{rej}} = -1.5\text{ util}$ : Pénalité calibrée liée au risque de rejet.
 
 > **Équivalence temps de trajet de $\beta_{\text{rej}}$ :**  
@@ -63,7 +63,7 @@ $$\gamma_n = \frac{1}{n^{0.75}}$$
 | [`EqasimModeChoiceModule.java`](file:///home/mmastio/popsynth/src/java/EqasimModeChoiceModule.java) | `core/src/main/java/org/eqasim/core/simulation/mode_choice/EqasimModeChoiceModule.java` | Déclaration et liaison Guice du singleton `DrtFeedbackService`, enregistrement en tant que listener MATSim (`addControlerListenerBinding`, `addEventHandlerBinding`), et injection dans le provider de `DefaultDrtPredictor`. |
 | [`IDFModeParameters.java`](file:///home/mmastio/popsynth/src/java/IDFModeParameters.java) | `ile_de_france/src/main/java/org/eqasim/ile_de_france/mode_choice/parameters/IDFModeParameters.java` | Initialisation des coefficients par défaut pour le DRT dans `buildDefault()` : `betaTravelTime_u_min = -0.06`, `betaWaitingTime_u_min = -0.09`, `betaRejection_u = -5.0`. |
 | [`IDFModeChoiceModule.java`](file:///home/mmastio/popsynth/src/java/IDFModeChoiceModule.java) | `ile_de_france/src/main/java/org/eqasim/ile_de_france/mode_choice/IDFModeChoiceModule.java` | Configuration du pipeline DMC spécifique au scénario Île-de-France/Toulouse. |
-| [`FlatDrtCostModel.java`](file:///home/mmastio/popsynth/src/java/FlatDrtCostModel.java) | `ile_de_france/src/main/java/org/eqasim/ile_de_france/mode_choice/costs/FlatDrtCostModel.java` | Implémentation d'un modèle de coût monétaire DRT configurable. |
+| [`FlatDrtCostModel.java`](file:///home/mmastio/popsynth/src/java/FlatDrtCostModel.java) | `ile_de_france/src/main/java/org/eqasim/ile_de_france/mode_choice/costs/FlatDrtCostModel.java` | Modèle de coût monétaire DRT (fixé à 0,00 € pour la gratuité du service). |
 | [`pom.xml`](file:///home/mmastio/popsynth/src/java/pom.xml) | `pom.xml` | Configuration racine Maven (compilation Java 25, dépendances MATSim et Eqasim). |
 
 ---

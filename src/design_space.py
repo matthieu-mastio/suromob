@@ -8,18 +8,18 @@ def create_amod_design_space():
     pour le problème d'optimisation AMoD (Toulouse).
     
     L'espace comprend :
-    - 4 variables pour la densité de la flotte (0 à 5 navettes par type pour 1000 personnes).
+    - 4 variables pour la densité de la flotte (0 à 10 navettes 4/6 places, 0 à 5 navettes 15/20 places pour 5 000 personnes).
     - 1 variable entière pour le temps d'attente maximum (300 à 1800 secondes).
     - 1 variable continue pour l'élasticité du temps de trajet (alpha).
     - 1 variable continue pour le score / utilité de l'AMoD par rapport à la voiture.
     """
     
     ds = DesignSpace([
-        # --- 1. Densité de la flotte (Nb de navettes pour 1000 personnes) ---
-        IntegerVariable(0, 5),  # density_4_seats (navettes 4 places / 1000 personnes)
-        IntegerVariable(0, 5),  # density_6_seats (navettes 6 places / 1000 personnes)
-        IntegerVariable(0, 5),  # density_15_seats (navettes 15 places / 1000 personnes)
-        IntegerVariable(0, 5),  # density_20_seats (navettes 20 places / 1000 personnes)
+        # --- 1. Densité de la flotte (Nb de navettes pour 5 000 personnes) ---
+        IntegerVariable(0, 10),  # density_4_seats (0 à 10 navettes 4 places / 5 000 personnes)
+        IntegerVariable(0, 10),  # density_6_seats (0 à 10 navettes 6 places / 5 000 personnes)
+        IntegerVariable(0, 5),   # density_15_seats (0 à 5 navettes 15 places / 5 000 personnes)
+        IntegerVariable(0, 5),   # density_20_seats (0 à 5 navettes 20 places / 5 000 personnes)
         
         # --- 2. Contraintes de Service et Rebalancing ---
         # maxWaitTime (en secondes) : de 5 minutes à 30 minutes
@@ -53,7 +53,7 @@ def _reorder_nested(small, large):
     reordered_large = np.vstack((large[idx_small_in_large], large[idx_large_only]))
     return reordered_large
 
-def generate_nested_doe(ds, hifi_size=10):
+def generate_nested_doe(ds, hifi_size=10, seed=0):
     """
     Génère un Design of Experiments (DoE) imbriqué (Nested) pour le Multi-Fidelity Kriging (MFK)
     en utilisant l'outil NestedLHS de SMT.
@@ -62,18 +62,33 @@ def generate_nested_doe(ds, hifi_size=10):
     - Les 10 premiers points de LF1 soient exactement HF.
     - Les 20 premiers points de LF0 soient exactement LF1.
     
+    Une vérification garantit qu'aucun point n'a une flotte totale de 0 véhicule
+    (densité = 0 pour les 4 types de véhicules).
+    
     Args:
         ds: L'espace de conception SMT (DesignSpace)
         hifi_size: La taille du plan Haute-Fidélité (HF). (défaut: 10)
+        seed: Graine aléatoire initiale pour NestedLHS (défaut: 0)
                
     Returns:
         Un dictionnaire contenant les tableaux d'échantillons LF0 (80), LF1 (20) et HF (10).
     """
-    # L'outil SMT calcule nt = [80, 40, 20, 10] si on met nlevel=4 et hifi_size=10
-    sampler = NestedLHS(nlevel=4, design_space=ds,seed=31)
-    
-    # La méthode __call__ prend en argument le nombre de points haute fidélité (HF)
-    doe_list = sampler(hifi_size) 
+    current_seed = seed
+    while True:
+        # L'outil SMT calcule nt = [80, 40, 20, 10] si on met nlevel=4 et hifi_size=10
+        sampler = NestedLHS(nlevel=4, design_space=ds, seed=current_seed)
+        
+        # La méthode __call__ prend en argument le nombre de points haute fidélité (HF)
+        doe_list = sampler(hifi_size) 
+        
+        # Vérifier qu'aucun échantillon dans aucun niveau n'a 0 véhicule au total (les 4 premières colonnes)
+        has_zero_fleet = any(
+            np.any(np.sum(np.round(d[:, :4]), axis=1) == 0)
+            for d in doe_list
+        )
+        if not has_zero_fleet:
+            break
+        current_seed += 1
     
     # On filtre pour ne garder que 80, 20 et 10
     hf = doe_list[3]
