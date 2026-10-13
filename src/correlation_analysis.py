@@ -80,6 +80,33 @@ def load_and_validate(csv_path: Path) -> pd.DataFrame:
     return df
 
 
+def filter_territories_if_incomplete(df: pd.DataFrame, territory_choice: str = "auto") -> pd.DataFrame:
+    """
+    Ensure analysis runs on complete territory datasets.
+    If territory_choice == 'auto':
+        Checks if Toulouse results are complete (has 50% HF and all sampling rates matching 31000).
+        If incomplete, filters to 31000 only.
+    """
+    if territory_choice in ["31000", "toulouse"]:
+        print(f"[INFO] Restricting analysis to {territory_choice} (user specified).")
+        return df[df["territory"] == territory_choice].copy()
+    elif territory_choice == "all":
+        return df.copy()
+
+    # 'auto' mode: check if toulouse has 50pct and full sampling rates
+    territories = sorted(df["territory"].unique())
+    if "31000" in territories and "toulouse" in territories:
+        s_31000 = set(df[df["territory"] == "31000"]["sampling_rate"].unique())
+        s_toulouse = set(df[df["territory"] == "toulouse"]["sampling_rate"].unique())
+        has_tou_50 = "50pct" in s_toulouse
+        if not has_tou_50 or len(s_toulouse) < len(s_31000):
+            print("[INFO] Toulouse results are incomplete (missing 50pct HF or fewer sampling rates).")
+            print("       Restricting analysis to 31000.")
+            return df[df["territory"] == "31000"].copy()
+
+    return df.copy()
+
+
 def get_ordered_populations(df: pd.DataFrame) -> List[str]:
     """Return population column names sorted logically by territory and sampling rate."""
     territories = sorted(df["territory"].unique())
@@ -155,6 +182,10 @@ def analyze_hf_correlations(piv: pd.DataFrame, territories: List[str], metric: s
 def analyze_cross_territory(piv: pd.DataFrame, metric: str) -> List[Dict]:
     """Compute correlation between 31000 and Toulouse for identical sampling rates."""
     rows = []
+    has_both = any("31000_" in c for c in piv.columns) and any("toulouse_" in c for c in piv.columns)
+    if not has_both:
+        return rows
+
     for s in SAMPLING_ORDER:
         col_31 = f"31000_{s}"
         col_tou = f"toulouse_{s}"
@@ -202,7 +233,7 @@ def setup_style():
     })
 
 
-def plot_convergence_curves(hf_df: pd.DataFrame, output_dir: Path):
+def plot_convergence_curves(hf_df: pd.DataFrame, output_dir: Path, territories: List[str]):
     """Plot Pearson correlation r(LF, 50%) as a function of sampling rate."""
     key_metrics = ["rejection_rate", "wait_average", "drt_modal_share"]
     fig, axes = plt.subplots(1, 3, figsize=(14, 4.2), sharey=True)
@@ -214,7 +245,7 @@ def plot_convergence_curves(hf_df: pd.DataFrame, output_dir: Path):
         ax = axes[idx]
         sub = hf_df[hf_df["metric"] == metric]
 
-        for t in ["31000", "toulouse"]:
+        for t in territories:
             t_sub = sub[sub["territory"] == t].sort_values("sampling_pct")
             if not t_sub.empty:
                 label = f"Toulouse City ({t})" if t == "toulouse" else f"Hypercenter ({t})"
@@ -228,7 +259,10 @@ def plot_convergence_curves(hf_df: pd.DataFrame, output_dir: Path):
 
         ax.set_title(METRIC_LABELS.get(metric, metric))
         ax.set_xlabel("Population Sampling Rate (%)")
-        ax.set_xticks([1, 5, 10, 20, 25])
+        x_ticks = sorted(sub["sampling_pct"].dropna().unique())
+        if x_ticks:
+            ax.set_xticks(x_ticks)
+            ax.set_xticklabels([f"{int(x)}%" for x in x_ticks])
         ax.grid(True)
         ax.axhline(0.95, color="gray", linestyle=":", label="Threshold r = 0.95" if idx == 0 else "")
 
@@ -277,32 +311,69 @@ def plot_correlation_heatmaps(piv_dict: Dict[str, pd.DataFrame], output_dir: Pat
     print(f"  Saved figure: {plot_path}")
 
 
-def plot_scatter_lf_vs_hf(piv_dict: Dict[str, pd.DataFrame], output_dir: Path):
-    """Plot scatter plots of 1% vs 50% and 10% vs 50% for rejection_rate."""
+def plot_scatter_lf_vs_hf(piv_dict: Dict[str, pd.DataFrame], output_dir: Path, territories: List[str]):
+    """Plot scatter plots of low-fidelity vs 50% high-fidelity for rejection_rate."""
     piv = piv_dict["rejection_rate"]
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4.5), sharey=True)
 
-    comparisons = [("1pct", "50pct"), ("10pct", "50pct")]
+    comparisons = []
+    for s in ["1pct", "5pct", "10pct", "20pct", "25pct"]:
+        if any(f"{t}_{s}" in piv.columns and f"{t}_50pct" in piv.columns for t in territories):
+            comparisons.append((s, "50pct"))
+
+    if not comparisons:
+        print("  [WARN] No low-fidelity vs 50% high-fidelity pairs found to plot in fig_scatter_lf_vs_hf.")
+        return
+
+    n_comp = len(comparisons)
+    fig, axes = plt.subplots(1, n_comp, figsize=(4.8 * n_comp, 4.5), sharey=True)
+    if n_comp == 1:
+        axes = [axes]
+
     for idx, (lf_s, hf_s) in enumerate(comparisons):
         ax = axes[idx]
+        all_pts_x = []
+        all_pts_y = []
+
         for t, color, marker, label in [
             ("31000", "#1f77b4", "o", "Hypercenter (31000)"),
             ("toulouse", "#d62728", "s", "Toulouse City")
         ]:
+            if t not in territories:
+                continue
             col_lf = f"{t}_{lf_s}"
             col_hf = f"{t}_{hf_s}"
             if col_lf in piv.columns and col_hf in piv.columns:
                 sub = piv[[col_lf, col_hf]].dropna()
-                ax.scatter(sub[col_lf], sub[col_hf], color=color, marker=marker, alpha=0.8, label=label)
+                if sub.empty:
+                    continue
+
+                lf_vals = sub[col_lf].values
+                hf_vals = sub[col_hf].values
+                all_pts_x.extend(lf_vals)
+                all_pts_y.extend(hf_vals)
+
+                r_p = float(np.corrcoef(lf_vals, hf_vals)[0, 1]) if len(sub) > 1 else np.nan
+                ax.scatter(lf_vals, hf_vals, color=color, marker=marker, alpha=0.85,
+                           label=f"{label} (r={r_p:.2f})" if not np.isnan(r_p) else label)
 
                 # Linear regression fit
                 if len(sub) > 2:
-                    p = np.polyfit(sub[col_lf], sub[col_hf], 1)
-                    x_fit = np.linspace(sub[col_lf].min(), sub[col_lf].max(), 50)
+                    p = np.polyfit(lf_vals, hf_vals, 1)
+                    x_fit = np.linspace(min(lf_vals), max(lf_vals), 50)
                     ax.plot(x_fit, np.polyval(p, x_fit), color=color, linestyle="--", alpha=0.7)
 
+        # Dynamic axis limits based on actual plotted data
+        all_vals = all_pts_x + all_pts_y
+        if all_vals:
+            min_val = min(all_vals)
+            max_val = max(all_vals)
+            span = max_val - min_val
+            margin = max(0.04, 0.08 * span)
+            lims = [max(0.0, min_val - margin), min(1.0, max_val + margin)]
+        else:
+            lims = [0.0, 1.0]
+
         # Identity line
-        lims = [0.45, 0.95]
         ax.plot(lims, lims, color="black", linestyle=":", alpha=0.5, label="Identity line (y = x)")
         ax.set_xlim(lims)
         ax.set_ylim(lims)
@@ -311,7 +382,7 @@ def plot_scatter_lf_vs_hf(piv_dict: Dict[str, pd.DataFrame], output_dir: Path):
         ax.grid(True)
         if idx == 0:
             ax.set_ylabel("High Fidelity (50%)")
-            ax.legend(loc="upper left")
+        ax.legend(loc="upper left", fontsize=8)
 
     plt.tight_layout()
     plot_path = output_dir / "fig_scatter_lf_vs_hf.png"
@@ -328,6 +399,11 @@ def main():
     )
     parser.add_argument("--input", "-i", type=str, default=DEFAULT_INPUT, help="Path to res.csv")
     parser.add_argument("--output-dir", "-o", type=str, default=DEFAULT_OUTPUT_DIR, help="Output directory")
+    parser.add_argument(
+        "--territory", "-t", type=str, default="auto",
+        choices=["auto", "31000", "toulouse", "all"],
+        help="Territory to analyze (default: 'auto', restricts to 31000 if Toulouse is incomplete)"
+    )
     parser.add_argument("--no-plots", action="store_true", help="Disable plot generation")
 
     args = parser.parse_args()
@@ -342,8 +418,9 @@ def main():
     print(f"  Output dir:  {output_dir.resolve()}")
     print("=" * 80)
 
-    # 1. Load data
+    # 1. Load data & filter incomplete territories
     df = load_and_validate(input_path)
+    df = filter_territories_if_incomplete(df, args.territory)
     ordered_pops = get_ordered_populations(df)
     territories = sorted(df["territory"].unique())
 
@@ -383,21 +460,27 @@ def main():
     print("=" * 80)
     for metric in ["rejection_rate", "wait_average", "drt_modal_share"]:
         print(f"\n--- Metric: {metric.upper()} ---")
-        sub = hf_summary_df[hf_summary_df["metric"] == metric][[
-            "territory", "sampling_rate", "n_points",
-            "pearson_r", "spearman_rho", "scaling_rho", "nrmse_pct", "mean_bias"
-        ]]
-        print(sub.to_string(index=False))
+        if not hf_summary_df.empty:
+            sub = hf_summary_df[hf_summary_df["metric"] == metric][[
+                "territory", "sampling_rate", "n_points",
+                "pearson_r", "spearman_rho", "scaling_rho", "nrmse_pct", "mean_bias"
+            ]]
+            print(sub.to_string(index=False))
+        else:
+            print("  No high-fidelity pairs available.")
 
-    print("\n" + "=" * 80)
-    print("2. CROSS-TERRITORY CORRELATION (31000 vs TOULOUSE AT SAME SAMPLING RATE)")
-    print("=" * 80)
-    for metric in ["rejection_rate", "wait_average", "drt_modal_share"]:
-        print(f"\n--- Metric: {metric.upper()} ---")
-        sub = cross_summary_df[cross_summary_df["metric"] == metric][[
-            "sampling_rate", "n_points", "pearson_r", "spearman_rho", "rmse"
-        ]]
-        print(sub.to_string(index=False))
+    if not cross_summary_df.empty:
+        print("\n" + "=" * 80)
+        print("2. CROSS-TERRITORY CORRELATION (31000 vs TOULOUSE AT SAME SAMPLING RATE)")
+        print("=" * 80)
+        for metric in ["rejection_rate", "wait_average", "drt_modal_share"]:
+            print(f"\n--- Metric: {metric.upper()} ---")
+            sub = cross_summary_df[cross_summary_df["metric"] == metric][[
+                "sampling_rate", "n_points", "pearson_r", "spearman_rho", "rmse"
+            ]]
+            print(sub.to_string(index=False))
+    else:
+        print("\n[NOTE] Cross-territory analysis skipped (single territory analyzed).")
 
     # 5. Generate publication plots
     if not args.no_plots:
@@ -405,9 +488,9 @@ def main():
         print("GENERATING FIGURES FOR PUBLICATION")
         print("=" * 80)
         setup_style()
-        plot_convergence_curves(hf_summary_df, output_dir)
+        plot_convergence_curves(hf_summary_df, output_dir, territories)
         plot_correlation_heatmaps(piv_dict, output_dir)
-        plot_scatter_lf_vs_hf(piv_dict, output_dir)
+        plot_scatter_lf_vs_hf(piv_dict, output_dir, territories)
 
     print("\n[SUCCESS] Analysis complete. All tables and plots are saved in:", output_dir.resolve())
 

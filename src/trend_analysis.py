@@ -29,14 +29,14 @@ DEFAULT_INPUT = "res.csv"
 DEFAULT_OUTPUT_DIR = "trend_results"
 
 INPUT_VARS = [
-    "total_capacity",
+    "capacity_density",
     "max_wait_time",
     "max_travel_time_alpha",
     "drt_constant"
 ]
 
 INPUT_LABELS = {
-    "total_capacity": "Total Fleet Capacity (seats)",
+    "capacity_density": "Fleet Capacity Density (seats / 5 000 pers)",
     "max_wait_time": "Max Wait Time (s)",
     "max_travel_time_alpha": "Max Travel Time Alpha (-)",
     "drt_constant": "DRT Constant / ASC (-)"
@@ -59,6 +59,28 @@ SAMPLING_ORDER = ["1pct", "5pct", "10pct", "20pct", "25pct", "50pct"]
 
 # ── Core Analysis Functions ──────────────────────────────────────────────────
 
+def filter_territories_if_incomplete(df: pd.DataFrame, territory_choice: str = "auto") -> pd.DataFrame:
+    """Filter dataset to complete territories if Toulouse is missing high-fidelity runs."""
+    if territory_choice in ["31000", "toulouse"]:
+        print(f"[INFO] Restricting analysis to {territory_choice} (user specified).")
+        return df[df["territory"] == territory_choice].copy()
+    elif territory_choice == "all":
+        return df.copy()
+
+    # 'auto' mode: check if toulouse has 50pct and full sampling rates
+    territories = sorted(df["territory"].unique())
+    if "31000" in territories and "toulouse" in territories:
+        s_31000 = set(df[df["territory"] == "31000"]["sampling_rate"].unique())
+        s_toulouse = set(df[df["territory"] == "toulouse"]["sampling_rate"].unique())
+        has_tou_50 = "50pct" in s_toulouse
+        if not has_tou_50 or len(s_toulouse) < len(s_31000):
+            print("[INFO] Toulouse results are incomplete (missing 50pct HF or fewer sampling rates).")
+            print("       Restricting analysis to 31000.")
+            return df[df["territory"] == "31000"].copy()
+
+    return df.copy()
+
+
 def compute_correlations_and_gradients(df: pd.DataFrame, populations: List[str]) -> pd.DataFrame:
     """
     Compute input-output correlation and standardized beta coefficients (gradients)
@@ -79,14 +101,8 @@ def compute_correlations_and_gradients(df: pd.DataFrame, populations: List[str])
         for out in OUTPUT_VARS:
             y = sub[out].copy()
 
-            # 1. Pearson & Spearman correlation for each input
-            for feat in INPUT_VARS:
-                r_p = sub[feat].corr(y, method="pearson")
-                r_s = sub[feat].corr(y, method="spearman")
-
-            # 2. Standardized regression (OLS on z-scores) -> Beta gradients
-            X_std = (X - X.mean()) / X.std(ddof=0)
-            # Avoid division by zero if an input is constant
+            # Standardized regression (OLS on z-scores) -> Beta gradients
+            X_std = (X - X.mean()) / (X.std(ddof=0) if (X.std(ddof=0) > 0).all() else 1.0)
             X_std = X_std.fillna(0)
 
             y_std = (y - y.mean()) / (y.std(ddof=0) if y.std(ddof=0) > 0 else 1.0)
@@ -130,17 +146,19 @@ def setup_style():
 
 def plot_sensitivity_bars(results_df: pd.DataFrame, output_dir: Path):
     """Plot standardized beta gradients for each input across sampling rates."""
-    fig, axes = plt.subplots(len(OUTPUT_VARS), 2, figsize=(13, 11), sharex=True)
+    territories = sorted(results_df["territory"].unique())
+    n_terr = len(territories)
+    fig, axes = plt.subplots(len(OUTPUT_VARS), n_terr, figsize=(6.5 * n_terr, 11), squeeze=False)
 
     colors = {
-        "total_capacity": "#1f77b4",
+        "capacity_density": "#1f77b4",
         "max_wait_time": "#ff7f0e",
         "max_travel_time_alpha": "#2ca02c",
         "drt_constant": "#d62728"
     }
 
     for row_idx, out in enumerate(OUTPUT_VARS):
-        for col_idx, terr in enumerate(["31000", "toulouse"]):
+        for col_idx, terr in enumerate(territories):
             ax = axes[row_idx, col_idx]
             sub = results_df[(results_df["output"] == out) & (results_df["territory"] == terr)]
 
@@ -153,24 +171,27 @@ def plot_sensitivity_bars(results_df: pd.DataFrame, output_dir: Path):
 
             for i, feat in enumerate(INPUT_VARS):
                 if feat in piv.columns:
+                    label = INPUT_LABELS.get(feat, feat) if (row_idx == 0 and col_idx == 0) else ""
                     ax.bar(
                         x + (i - 1.5) * width,
                         piv[feat],
                         width=width,
                         color=colors[feat],
-                        label=feat.replace("_", " ") if (row_idx == 0 and col_idx == 0) else ""
+                        label=label
                     )
 
             terr_title = "Toulouse City" if terr == "toulouse" else "Hypercenter (31000)"
             ax.set_title(f"{OUTPUT_LABELS[out]} — {terr_title}")
             ax.axhline(0, color="black", linewidth=0.8, linestyle="-")
             ax.set_xticks(x)
-            ax.set_xticklabels(piv.index)
+            ax.set_xticklabels([s.replace("pct", "%") for s in piv.index], fontsize=10)
             ax.grid(True, axis="y")
             ax.set_ylim(-1.05, 1.05)
 
             if col_idx == 0:
                 ax.set_ylabel("Standardized Gradient (Beta)")
+            if row_idx == len(OUTPUT_VARS) - 1:
+                ax.set_xlabel("Population Sampling Rate")
 
     fig.legend(loc="upper center", bbox_to_anchor=(0.5, 0.99), ncol=4, frameon=True)
     plt.tight_layout(rect=[0, 0, 1, 0.96])
@@ -181,15 +202,35 @@ def plot_sensitivity_bars(results_df: pd.DataFrame, output_dir: Path):
 
 
 def plot_main_effects(df: pd.DataFrame, output_dir: Path):
-    """Plot main effect curves of inputs on rejection_rate for 10% and 50%."""
-    fig, axes = plt.subplots(1, 4, figsize=(15, 3.8), sharey=True)
+    """Plot main effect curves of inputs on rejection_rate across sampling rates."""
+    fig, axes = plt.subplots(1, 4, figsize=(15.5, 3.8), sharey=True)
 
-    pops_to_plot = [
-        ("31000_10pct", "#1f77b4", "--", "31000 10%"),
-        ("31000_50pct", "#1f77b4", "-", "31000 50%"),
-        ("toulouse_10pct", "#d62728", "--", "Toulouse 10%"),
-        ("toulouse_50pct", "#d62728", "-", "Toulouse 50%")
-    ]
+    territories = sorted(df["territory"].unique())
+    blue_shades = {
+        "1pct": ("#9ecae1", ":", "31000 1%"),
+        "5pct": ("#6baed6", ":", "31000 5%"),
+        "10pct": ("#3182bd", "-.", "31000 10%"),
+        "20pct": ("#08519c", "--", "31000 20%"),
+        "25pct": ("#08306b", "--", "31000 25%"),
+        "50pct": ("#021d49", "-", "31000 50% (HF)"),
+    }
+    red_shades = {
+        "1pct": ("#fc9272", ":", "Toulouse 1%"),
+        "5pct": ("#fb6a4a", ":", "Toulouse 5%"),
+        "10pct": ("#de2d26", "-.", "Toulouse 10%"),
+        "20pct": ("#a50f15", "--", "Toulouse 20%"),
+        "25pct": ("#67000d", "--", "Toulouse 25%"),
+        "50pct": ("#3a0007", "-", "Toulouse 50% (HF)"),
+    }
+
+    pops_to_plot = []
+    for t in territories:
+        shades = blue_shades if t == "31000" else red_shades
+        for s in SAMPLING_ORDER:
+            pop = f"{t}_{s}"
+            if pop in df["population"].values:
+                color, lstyle, label = shades.get(s, ("black", "-", pop))
+                pops_to_plot.append((pop, color, lstyle, label))
 
     for idx, feat in enumerate(INPUT_VARS):
         ax = axes[idx]
@@ -199,13 +240,15 @@ def plot_main_effects(df: pd.DataFrame, output_dir: Path):
                 continue
 
             # Bin the input into quantiles or grouped values to observe the trend
-            grouped = sub.groupby(pd.qcut(sub[feat], q=min(5, len(sub[feat].unique())), duplicates="drop"))["rejection_rate"].mean()
+            n_unique = sub[feat].nunique()
+            grouped = sub.groupby(pd.qcut(sub[feat], q=min(5, n_unique), duplicates="drop"))["rejection_rate"].mean()
             x_vals = [interval.mid for interval in grouped.index]
             y_vals = grouped.values
 
-            ax.plot(x_vals, y_vals, color=color, linestyle=lstyle, marker="o", label=label if idx == 0 else "")
+            ax.plot(x_vals, y_vals, color=color, linestyle=lstyle, marker="o", markersize=4, label=label if idx == 0 else "")
 
-        ax.set_title(feat.replace("_", " ").title())
+        title = INPUT_LABELS[feat].split("(")[0].strip()
+        ax.set_title(title)
         ax.set_xlabel(INPUT_LABELS[feat])
         ax.grid(True)
         if idx == 0:
@@ -227,6 +270,11 @@ def main():
     )
     parser.add_argument("--input", "-i", type=str, default=DEFAULT_INPUT, help="Path to res.csv")
     parser.add_argument("--output-dir", "-o", type=str, default=DEFAULT_OUTPUT_DIR, help="Output directory")
+    parser.add_argument(
+        "--territory", "-t", type=str, default="auto",
+        choices=["auto", "31000", "toulouse", "all"],
+        help="Territory to analyze (default: 'auto', restricts to 31000 if Toulouse is incomplete)"
+    )
 
     args = parser.parse_args()
 
@@ -245,6 +293,13 @@ def main():
     df["territory"] = df["population"].apply(lambda x: x.split("_")[0])
     df["sampling_rate"] = df["population"].apply(lambda x: x.split("_")[1])
 
+    # Compute capacity_density if not already present
+    if "capacity_density" not in df.columns:
+        df["capacity_density"] = df["nb_4"] * 4 + df["nb_6"] * 6 + df["nb_15"] * 15 + df["nb_20"] * 20
+
+    # Filter incomplete territories
+    df = filter_territories_if_incomplete(df, args.territory)
+
     ordered_pops = [f"{t}_{s}" for t in sorted(df["territory"].unique()) for s in SAMPLING_ORDER if f"{t}_{s}" in df["population"].values]
 
     # 2. Compute trends
@@ -258,7 +313,8 @@ def main():
     print("SYNTHESIS OF PHYSICAL TRENDS (Input -> Output Directions)")
     print("=" * 80)
 
-    ref_pop = "toulouse_10pct"
+    ref_candidates = ["31000_10pct", "31000_50pct", "toulouse_10pct"]
+    ref_pop = next((p for p in ref_candidates if p in results_df["population"].values), results_df["population"].iloc[0])
     ref_sub = results_df[results_df["population"] == ref_pop]
 
     for out in OUTPUT_VARS:
