@@ -139,7 +139,28 @@ simwrapper run --port 5000
 # From client: ssh -L 5000:127.0.0.1:5000 user@server
 ```
 
-### 6. Surrogate Model Fitting (upcoming)
+### 6. Post-Processing & Multi-Fidelity Analysis
+
+Run the unified analysis pipeline on the simulation results:
+
+```bash
+# 1. Consolidate results from all simulation runs
+uv run python src/parse_outputs.py --sa-dir sa_output_all/ --output res.csv
+
+# 2. Run unified multi-fidelity, scaling, and sensitivity analysis
+uv run python src/analysis.py
+```
+
+This single command generates:
+- **`fig_1_metric_means_vs_sampling.png`**: Scaling of output metric means ($\pm 1\sigma$) across sampling rates (1% → 50%).
+- **`fig_2_r2_and_correlation_convergence.png`**: Linear $R^2$ ($r^2$) and Pearson $r$ convergence curves against 50% HF.
+- **`fig_3_scatter_lf_vs_hf.png`**: Low-fidelity vs 50% high-fidelity scatter plots with linear fits, identity line, and $R^2$ scores.
+- **`fig_4_correlation_heatmaps.png`**: Inter-fidelity Pearson correlation matrices.
+- **`fig_5_input_sensitivities_by_fidelity.png`**: Standardized sensitivity gradients ($\beta$) across fidelities.
+- **`fig_6_main_effects_rejection.png`**: Main effect curves on common fleet capacity density (seats / 5 000 pers).
+- Consolidated CSV tables: `metric_means_by_sampling_rate.csv`, `r2_and_fidelity_summary.csv`, `sensitivity_gradients.csv`.
+
+### 7. Surrogate Model Fitting (upcoming)
 
 Once simulation results are collected, the next step is to fit a **Multi-Fidelity Kriging (MFK)** surrogate using the [SMT toolbox](https://smt.readthedocs.io/). The surrogate fuses all fidelity levels:
 
@@ -163,11 +184,15 @@ popsynth/
 │   ├── design_space.py          # Design space definition & nested DOE sampling (SMT)
 │   ├── add_drt.py               # DRT config & fleet generator for MATSim
 │   ├── run_sensitivity.py       # Automated batch simulation orchestrator
+│   ├── parse_outputs.py         # Consolidates MATSim outputs into summary CSV
+│   ├── analysis.py              # Unified multi-fidelity, R², scaling & sensitivity analysis
 │   └── get_31000_shapefile/     # Shapefile extraction for Toulouse 31000
 │       └── get_31000_shapefile.py
 ├── doe_HF_10.csv                # High-fidelity DOE (10 points)
 ├── doe_LF1_20.csv               # Mid-fidelity DOE (20 points, ⊃ HF)
 ├── doe_LF0_80.csv               # Low-fidelity DOE (80 points, ⊃ LF1)
+├── res.csv                      # Consolidated simulation results
+├── analysis_results/            # Generated publication figures & summary CSVs
 ├── generated_pops/              # Generated populations (not tracked in git)
 │   ├── 31000_1pct/
 │   ├── 31000_5pct/
@@ -175,7 +200,7 @@ popsynth/
 │   └── ...
 ├── eqasim-france/               # Eqasim population synthesis (submodule/external)
 ├── eqasim-java/                 # Eqasim MATSim runner (submodule/external)
-└── sa_output/                   # Simulation results (not tracked in git)
+└── sa_output_all/               # Simulation results (not tracked in git)
 ```
 
 ## Dependencies
