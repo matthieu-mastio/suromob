@@ -266,29 +266,8 @@ def analyze_metric_scaling(df: pd.DataFrame, output_dir: Path) -> pd.DataFrame:
         ax.grid(True)
         ax.legend(fontsize=8, loc="best")
 
-    # 6th panel: summary table / convergence text
-    ax_summary = axes_flat[5]
-    ax_summary.axis("off")
-    summary_text = (
-        "Convergence Summary (31000 Reference):\n\n"
-        "• Rejection Rate:\n"
-        "  1% -> 50%: 52.0% -> 38.0% (-14.0% pts)\n\n"
-        "• Mean Wait Time:\n"
-        "  1% -> 50%: 1,046s -> 413s (-60.5%)\n"
-        "  (Stabilizes around ~415s from 10% onwards)\n\n"
-        "• DRT Modal Share:\n"
-        "  1% -> 50%: 0.55% -> 0.83% (+50.9%)\n\n"
-        "• Load Factor:\n"
-        "  1% -> 50%: 8.9% -> 19.9% (+11.0% pts)\n"
-        "  (Increases with trip density & sharing)\n\n"
-        "• Direct Distance Ratio:\n"
-        "  1% -> 50%: 0.68 -> 1.03\n"
-    )
-    ax_summary.text(
-        0.05, 0.95, summary_text, transform=ax_summary.transAxes,
-        fontsize=9.5, verticalalignment="top", fontfamily="monospace",
-        bbox=dict(boxstyle="round,pad=0.6", facecolor="#f8f9fa", edgecolor="#ced4da")
-    )
+    # 6th panel: hide unused axis (convergence summary removed)
+    axes_flat[5].set_visible(False)
 
     plt.tight_layout()
     plot_path = output_dir / "fig_1_metric_means_vs_sampling.png"
@@ -384,8 +363,8 @@ def analyze_r2_and_fidelity(
     hf_summary_df.to_csv(csv_path, index=False)
     print(f"  Saved table:  {csv_path}")
 
-    # Plot 2: Convergence curves of R² linear and Pearson r
-    fig, axes = plt.subplots(1, 2, figsize=(13, 4.8), sharex=True)
+    # Plot 2: Convergence curves of Pearson r against 50% HF baseline
+    fig, ax_r = plt.subplots(figsize=(7.5, 4.8))
 
     metric_styles = {
         "rejection_rate": ("#1f77b4", "o", "Rejection Rate"),
@@ -395,11 +374,6 @@ def analyze_r2_and_fidelity(
         "direct_distance_ratio": ("#9467bd", "v", "Direct Distance Ratio"),
     }
 
-    # Left panel: R² Linear
-    ax_r2 = axes[0]
-    # Right panel: Pearson r
-    ax_r = axes[1]
-
     sub_t = hf_summary_df[hf_summary_df["territory"] == "31000"] if "31000" in territories else hf_summary_df
 
     for m in OUTPUT_VARS:
@@ -408,37 +382,23 @@ def analyze_r2_and_fidelity(
             continue
         color, marker, label = metric_styles.get(m, ("k", "o", m))
 
-        ax_r2.plot(
-            sub_m["sampling_pct"], sub_m["r2_linear"],
-            marker=marker, color=color, label=label
-        )
         ax_r.plot(
             sub_m["sampling_pct"], sub_m["pearson_r"],
-            marker=marker, color=color, label=label
+            marker=marker, color=color, label=label, linewidth=2, markersize=7
         )
 
-    # Thresholds
-    ax_r2.axhline(0.90, color="gray", linestyle=":", label="Target R² = 0.90")
-    ax_r2.axhline(0.95, color="darkgray", linestyle="--", alpha=0.7, label="Target R² = 0.95")
-    ax_r2.set_title("Determination Coefficient ($R^2$ Linear) vs. 50% HF", fontweight="bold")
-    ax_r2.set_xlabel("Population Sampling Rate (%)")
-    ax_r2.set_ylabel("Linear $R^2$ ($r^2$)")
-    ax_r2.set_ylim(-0.05, 1.05)
-    ax_r2.grid(True)
-    ax_r2.legend(fontsize=8, loc="lower right")
-
-    ax_r.axhline(0.95, color="gray", linestyle=":", label="Target r = 0.95")
-    ax_r.set_title("Pearson Correlation ($r$) vs. 50% HF", fontweight="bold")
+    # Reference threshold lines
+    ax_r.axhline(0.95, color="darkgray", linestyle="--", linewidth=1.2, alpha=0.8, label="Target r = 0.95")
+    ax_r.axhline(0.90, color="gray", linestyle=":", linewidth=1.2, alpha=0.8, label="Target r = 0.90")
+    ax_r.set_title("Pearson Correlation ($r$) vs. 50% High-Fidelity Baseline", fontweight="bold")
     ax_r.set_xlabel("Population Sampling Rate (%)")
     ax_r.set_ylabel("Pearson Correlation ($r$)")
     ax_r.set_ylim(-0.05, 1.05)
     ax_r.grid(True)
-    ax_r.legend(fontsize=8, loc="lower right")
+    ax_r.legend(fontsize=9, loc="lower right", frameon=True)
 
     if not sub_t.empty:
         all_x = sorted(sub_t["sampling_pct"].dropna().unique())
-        ax_r2.set_xticks(all_x)
-        ax_r2.set_xticklabels([f"{int(x)}%" for x in all_x])
         ax_r.set_xticks(all_x)
         ax_r.set_xticklabels([f"{int(x)}%" for x in all_x])
 
@@ -598,7 +558,7 @@ def analyze_sensitivities(df: pd.DataFrame, populations: List[str], output_dir: 
 
         X = sub[INPUT_VARS].copy()
 
-        for out in ["rejection_rate", "wait_average", "drt_modal_share"]:
+        for out in OUTPUT_VARS:
             if out not in sub.columns:
                 continue
             y = sub[out].copy()
@@ -631,11 +591,13 @@ def analyze_sensitivities(df: pd.DataFrame, populations: List[str], output_dir: 
     print(f"  Saved table:  {csv_path}")
 
     # Plot 5: Bar charts
+    from matplotlib.patches import Patch
+
     territories = sorted(sens_df["territory"].unique())
     n_terr = len(territories)
-    out_vars = ["rejection_rate", "wait_average", "drt_modal_share"]
+    out_vars = [m for m in OUTPUT_VARS if m in sens_df["output"].unique()]
 
-    fig, axes = plt.subplots(len(out_vars), n_terr, figsize=(6.5 * n_terr, 11), squeeze=False)
+    fig, axes = plt.subplots(len(out_vars), n_terr, figsize=(8.0 * n_terr, 2.7 * len(out_vars) + 0.9), squeeze=False)
 
     for row_idx, out in enumerate(out_vars):
         for col_idx, terr in enumerate(territories):
@@ -650,17 +612,15 @@ def analyze_sensitivities(df: pd.DataFrame, populations: List[str], output_dir: 
 
             for i, feat in enumerate(INPUT_VARS):
                 if feat in piv.columns:
-                    label = INPUT_LABELS.get(feat, feat) if (row_idx == 0 and col_idx == 0) else ""
                     ax.bar(
                         x + (i - 1.5) * width,
                         piv[feat],
                         width=width,
                         color=INPUT_COLORS.get(feat, "#1f77b4"),
-                        label=label
                     )
 
             terr_title = "Toulouse City" if terr == "toulouse" else "Hypercenter (31000)"
-            ax.set_title(f"{OUTPUT_LABELS.get(out, out)} — {terr_title}", fontweight="bold")
+            ax.set_title(f"{OUTPUT_LABELS.get(out, out)} — {terr_title}", fontweight="bold", fontsize=11)
             ax.axhline(0, color="black", linewidth=0.8, linestyle="-")
             ax.set_xticks(x)
             ax.set_xticklabels([s.replace("pct", "%") for s in piv.index], fontsize=10)
@@ -668,12 +628,24 @@ def analyze_sensitivities(df: pd.DataFrame, populations: List[str], output_dir: 
             ax.set_ylim(-1.05, 1.05)
 
             if col_idx == 0:
-                ax.set_ylabel("Standardized Gradient (Beta)")
+                ax.set_ylabel("Standardized Gradient (Beta)", fontsize=9.5)
             if row_idx == len(out_vars) - 1:
-                ax.set_xlabel("Population Sampling Rate")
+                ax.set_xlabel("Population Sampling Rate", fontsize=10)
 
-    fig.legend(loc="upper center", bbox_to_anchor=(0.5, 0.99), ncol=4, frameon=True)
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    legend_patches = [
+        Patch(facecolor=INPUT_COLORS[feat], edgecolor="none", label=INPUT_LABELS.get(feat, feat))
+        for feat in INPUT_VARS
+    ]
+    fig.legend(
+        handles=legend_patches,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.992),
+        ncol=2,
+        frameon=True,
+        fontsize=9.5,
+        edgecolor="#cccccc"
+    )
+    plt.tight_layout(rect=[0, 0, 1, 0.94])
     plot_path = output_dir / "fig_5_input_sensitivities_by_fidelity.png"
     plt.savefig(plot_path, dpi=300)
     plt.close()
